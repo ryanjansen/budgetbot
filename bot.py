@@ -1,25 +1,15 @@
 from dotenv import load_dotenv
 from datetime import date
-from telegram import Update, ForceReply
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler, \
+    ConversationHandler
 import os
 import logging
 import re
-from functools import  reduce
+import db
 
 load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-
-"""
-Simple Bot to reply to Telegram messages.
-First, a few handler functions are defined. Then, those functions are passed to
-the Dispatcher and registered at their respective places.
-Then, the bot is started and runs until we press Ctrl-C on the command line.
-Usage:
-Basic Echobot example, repeats messages.
-Press Ctrl-C on the command line or send a signal to the process to stop the
-bot.
-"""
 
 # Enable logging
 logging.basicConfig(
@@ -28,84 +18,143 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-expenses = []
-categories = ['FOOD', 'SHOPPING', 'TRANSPORTATION', 'ENTERTAINMENT', 'SPORT']
+categories = ['FOOD', 'SHOPPING', 'TRANSPORTATION', 'ENTERTAINMENT', 'SPORT', 'MISC']
+category_alias = {'f': 'FOOD', 'sh': 'SHOPPING', 't': 'TRANSPORTATION', 'e': 'ENTERTAINMENT', 'sp': 'SPORT',
+                  'm': 'MISC'}
+
+db = db.Database("budget_bot", "ryan")
 
 
-def add_expense(amount, category, date):
-    expenses.append({'amount': amount, 'category': category, 'date': date})
-    return expenses
-
-
-def get_expenses():
+def print_expenses(expenses):
     result = ""
+    total = 0
     for cat in categories:
-        spending = sum(expense['amount'] for expense in expenses if expense['category'] == cat)
-        if spending == int(spending):
-            spending = int(spending)
+        spending = sum(expense[0] for expense in expenses if expense[2] == cat)
         if spending > 0:
             result += f"You've spent ${spending} on {cat.title()}\n"
+            total += spending
+    result += f"this month ({date.today().strftime('%B')})\n"
+    result += f'TOTAL: ${total}'
     return result
 
-# Define a few command handlers. These usually take the two arguments update and
-# context.
+
+def get_user_id(chat_id):
+    user_id = db.get_user(chat_id)
+    if not user_id:
+        return False
+    else:
+        return user_id[0][0]
 
 
 def start(update: Update, context: CallbackContext) -> None:
-    """Send a message when the command /start is issued."""
-    user = update.effective_user
-    update.message.reply_markdown_v2(
-        fr'Hi {user.mention_markdown_v2()}\!',
-        reply_markup=ForceReply(selective=True),
-    )
+    chat_id = update.message.chat_id
+    if not get_user_id(chat_id):
+        db.add_user(update.effective_user.name, chat_id)
+
+    message = """
+              H1!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:\n
+              Option 1: Enter a number and choose a category of spending\n
+              Option 2: Enter a number and category\n
+              Option 3: Enter a number and a shorthand category\n
+              There are six categories: food, shopping, transportation, entertainment, sport and misc.\n
+              Their shorthand forms are: f, sh, t, e, sp and m respectively.\n
+              So to add $10 to food, just type '10 f'\n
+
+              To see your spending for the month, use the /show command\n
+              That's all! Remember that you can use /help to see this message again! 
+            """
+
+    update.message.reply_text(message)
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
-    """Send a message when the command /help is issued."""
-    update.message.reply_text('Help!')
+    message = """
+              H1!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:\n  
+              Option 1: Enter a number and choose a category of spending\n
+              Option 2: Enter a number and category\n
+              Option 3: Enter a number and a shorthand category\n
+              There are six categories: food, shopping, transportation, entertainment, sport and misc.\n
+              Their shorthand forms are: f, sh, t, e, sp and m respectively.\n
+              So to add $10 to food, just type '10 f'\n
+              
+              To see your spending for the month, use the /show command\n
+              That's all! Remember that you can use /help to see this message again! 
+            """
+    update.message.reply_text(message)
 
 
 def show_expenses(update: Update, context: CallbackContext) -> None:
-    all_expenses = get_expenses()
+    user_id = get_user_id(update.message.chat_id)
+    all_expenses = db.get_expenses(user_id, date.today())
     if not all_expenses:
         update.message.reply_text("You haven't spent anything yet this month!")
     else:
-        update.message.reply_text(all_expenses)
+        update.message.reply_text(print_expenses(all_expenses))
 
 
-def echo(update: Update, context: CallbackContext) -> None:
-    """Echo the user message."""
+def add_expense_from_message(update: Update, context: CallbackContext) -> None:
     message = update.message.text
     nums = [float(n) for n in re.findall('\d*\.?\d+', message)]
-    cat = [s.upper() for s in message.split() if s.upper() in categories]
+    cat = ""
+    for s in message.split():
+        if s in category_alias:
+            cat = category_alias[s]
+            break
+        elif s.upper() in categories:
+            cat = s.upper()
+            break
     if nums and cat:
-        add_expense(nums[0], cat[0], date.today())
+        user_id = get_user_id(update.message.chat_id)
+        db.add_expense(user_id, nums[0], date.today(), cat)
         if nums[0] == int(nums[0]):
             nums[0] = int(nums[0])
-        update.message.reply_text(f"Got it, you spent ${nums[0]} on {cat[0].lower()}")
+        update.message.reply_text(f"Got it, you spent ${nums[0]} on {cat.lower()}")
+    elif nums and not cat:
+        context.user_data['amount'] = nums[0]
+        keyboard = [
+            [InlineKeyboardButton(cat.title(), callback_data=cat)] for cat in categories
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text(f"Got it, you spent ${nums[0]}.\n Please choose a category: ",
+                                  reply_markup=reply_markup)
     else:
         update.message.reply_text("Sorry, I didn't quite get that. Can you try again?")
 
-def main() -> None:
-    """Start the bot."""
-    # add_expense(100, 'FOOD', date.today())
-    # add_expense(20, 'FOOD', date.today())
-    # add_expense(15, 'SHOPPING', date.today())
-    # add_expense(29.4, 'SHOPPING', date.today())
-    # print(get_expenses())
-    # Create the Updater and pass it your bot's token.
-    updater = Updater(BOT_TOKEN)
 
-    # Get the dispatcher to register handlers
+def choose_category(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    user_id = get_user_id(query.message.chat_id)
+    amount = context.user_data['amount']
+    category = query.data
+    db.add_expense(user_id, amount, date.today(), category)
+    query.edit_message_text(text=f"Got it, you spent ${amount} on {category.lower()}")
+
+
+def undo(update: Update, context: CallbackContext) -> None:
+    user_id = get_user_id(update.message.chat_id)
+    if db.get_expenses(user_id, date.today()):
+        last_expense = db.delete_last_expense(user_id)
+        amount, d, cat = last_expense[0]
+        update.message.reply_text(f"Deleted last expense:\nSpent ${amount} on {cat.lower()} on {d.strftime('%d %b')} ")
+
+    else:
+        update.message.reply_text("You have no expenses to undo!")
+
+
+def main() -> None:
+    updater = Updater(BOT_TOKEN)
     dispatcher = updater.dispatcher
 
     # on different commands - answer in Telegram
     dispatcher.add_handler(CommandHandler("start", start))
     dispatcher.add_handler(CommandHandler("help", help_command))
     dispatcher.add_handler(CommandHandler("show", show_expenses))
+    dispatcher.add_handler(CommandHandler("undo", undo))
+    dispatcher.add_handler(CallbackQueryHandler(choose_category))
 
     # on non command i.e message - echo the message on Telegram
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, add_expense_from_message))
 
     # Start the Bot
     updater.start_polling()
