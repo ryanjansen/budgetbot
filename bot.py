@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from datetime import date
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler, \
     ConversationHandler
 import os
@@ -24,6 +24,14 @@ category_alias = {'f': 'FOOD', 'sh': 'SHOPPING', 't': 'TRANSPORTATION', 'e': 'EN
 
 db = db.Database("budget_bot", "ryan")
 
+number_keyboard = ReplyKeyboardMarkup([
+    ['1', '2', '3', 'f'],
+    ['4', '5', '6', 'sh'],
+    ['7', '8', '9', 'e'],
+    ['0', 'sp', 't', 'm']
+])
+
+REPEAT = 1
 
 def print_expenses(expenses):
     result = ""
@@ -31,6 +39,7 @@ def print_expenses(expenses):
     for cat in categories:
         spending = sum(expense[0] for expense in expenses if expense[2] == cat)
         if spending > 0:
+            rounded_spending = round(spending, 1)
             result += f"You've spent ${spending} on {cat.title()}\n"
             total += spending
     result += f"this month ({date.today().strftime('%B')})\n"
@@ -52,15 +61,15 @@ def start(update: Update, context: CallbackContext) -> None:
         db.add_user(update.effective_user.name, chat_id)
 
     message = """
-              H1!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:\n
-              Option 1: Enter a number and choose a category of spending\n
-              Option 2: Enter a number and category\n
-              Option 3: Enter a number and a shorthand category\n
-              There are six categories: food, shopping, transportation, entertainment, sport and misc.\n
-              Their shorthand forms are: f, sh, t, e, sp and m respectively.\n
-              So to add $10 to food, just type '10 f'\n
+              H1!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:
+              Option 1: Enter a number and choose a category of spending
+              Option 2: Enter a number and category
+              Option 3: Enter a number and a shorthand category
+              There are six categories: food, shopping, transportation, entertainment, sport and misc.
+              Their shorthand forms are: f, sh, t, e, sp and m respectively.
+              So to add $10 to food, just type '10 f'
 
-              To see your spending for the month, use the /show command\n
+              To see your spending for the month, use the /show command
               That's all! Remember that you can use /help to see this message again! 
             """
 
@@ -141,6 +150,13 @@ def undo(update: Update, context: CallbackContext) -> None:
     else:
         update.message.reply_text("You have no expenses to undo!")
 
+def repeat(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text("Ok, let's add a recurring expense. Please enter an amount and category:")
+
+    return REPEAT
+
+def add_recurring_expense(update: Update, context: CallbackContext) -> int:
+    user_id = get_user_id(update.message.chat_id)
 
 def main() -> None:
     updater = Updater(BOT_TOKEN)
