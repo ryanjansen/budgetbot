@@ -40,10 +40,11 @@ def print_expenses(expenses):
         spending = sum(expense[0] for expense in expenses if expense[2] == cat)
         if spending > 0:
             rounded_spending = round(spending, 1)
-            result += f"You've spent ${spending} on {cat.title()}\n"
+            result += f"You've spent ${rounded_spending} on {cat.title()}\n"
             total += spending
+    rounded_total = round(total, 1)
     result += f"this month ({date.today().strftime('%B')})\n"
-    result += f'TOTAL: ${total}'
+    result += f'TOTAL: ${rounded_total}'
     return result
 
 
@@ -61,7 +62,7 @@ def start(update: Update, context: CallbackContext) -> None:
         db.add_user(update.effective_user.name, chat_id)
 
     message = """
-              H1!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:
+              Hi!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:
               Option 1: Enter a number and choose a category of spending
               Option 2: Enter a number and category
               Option 3: Enter a number and a shorthand category
@@ -77,8 +78,7 @@ def start(update: Update, context: CallbackContext) -> None:
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
-    message = """
-              H1!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:\n  
+    message = """Hi!, I'm Budget Bot, your friendly neighbourhood spending tracker. Here's how I work:\n  
               Option 1: Enter a number and choose a category of spending\n
               Option 2: Enter a number and category\n
               Option 3: Enter a number and a shorthand category\n
