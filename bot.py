@@ -24,14 +24,8 @@ category_alias = {'f': 'FOOD', 'sh': 'SHOPPING', 't': 'TRANSPORTATION', 'e': 'EN
 
 db = db.Database("budget_bot", "ryan")
 
-number_keyboard = ReplyKeyboardMarkup([
-    ['1', '2', '3', 'f'],
-    ['4', '5', '6', 'sh'],
-    ['7', '8', '9', 'e'],
-    ['0', 'sp', 't', 'm']
-])
-
 REPEAT = 1
+
 
 def print_expenses(expenses):
     result = ""
@@ -152,11 +146,43 @@ def undo(update: Update, context: CallbackContext) -> None:
 
 def repeat(update: Update, context: CallbackContext) -> int:
     update.message.reply_text("Ok, let's add a recurring expense. Please enter an amount and category:")
-
     return REPEAT
 
+
 def add_recurring_expense(update: Update, context: CallbackContext) -> int:
+    message = update.message.text
+    nums = [float(n) for n in re.findall('\d*\.?\d+', message)]
+    cat = ""
+    for s in message.split():
+        if s in category_alias:
+            cat = category_alias[s]
+            break
+        elif s.upper() in categories:
+            cat = s.upper()
+            break
+
+    if not nums or not cat:
+        update.message.reply_text("Sorry, I didn't quite get that. Can you try again?")
+        return REPEAT
+
     user_id = get_user_id(update.message.chat_id)
+    db.add_expense(user_id, nums[0], date(2021, 9, 3), cat, True)
+    if nums[0] == int(nums[0]):
+        nums[0] = int(nums[0])
+    update.message.reply_text(f"Got it, you spend ${nums[0]} on {cat.lower()} every month")
+
+    return ConversationHandler.END
+
+
+def cancel(update: Update, context: CallbackContext) -> int:
+    """Cancels and ends the conversation."""
+    user = update.message.from_user
+    update.message.reply_text(
+        'Ok, cancelled'
+    )
+
+    return ConversationHandler.END
+
 
 def main() -> None:
     updater = Updater(BOT_TOKEN)
@@ -168,6 +194,16 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler("show", show_expenses))
     dispatcher.add_handler(CommandHandler("undo", undo))
     dispatcher.add_handler(CallbackQueryHandler(choose_category))
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('repeat', repeat)],
+        states={
+            REPEAT: [MessageHandler(Filters.text & ~Filters.command, add_recurring_expense)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+
+    dispatcher.add_handler(conv_handler)
 
     # on non command i.e message - echo the message on Telegram
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, add_expense_from_message))

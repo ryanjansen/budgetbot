@@ -32,20 +32,20 @@ class Database:
     def get_user(self, chat_id):
         command = """SELECT user_id FROM users WHERE chat_id = %s"""
         values = (chat_id, )
-        user =  self.__execute(command, values, True)
+        user = self.__execute(command, values, True)
         if user:
             return user
         else:
             return False
 
-    def add_expense(self, user_id, amount, date, category):
-        command = """ INSERT INTO expenses(user_id, amount, date, category) VALUES(%s, %s, %s, %s);"""
-        values = (user_id, amount, date, category)
+    def add_expense(self, user_id, amount, date, category, is_recurring=False):
+        command = """ INSERT INTO expenses(user_id, amount, date, category, is_recurring) VALUES(%s, %s, %s, %s, %s);"""
+        values = (user_id, amount, date, category, is_recurring)
         self.__execute(command, values)
 
     def get_expenses(self, user_id, date):
         command = """SELECT amount, date, category FROM expenses WHERE user_id = %s 
-                     AND EXTRACT(YEAR FROM date) = %s AND EXTRACT(MONTH FROM date) = %s"""
+                     AND ((EXTRACT(YEAR FROM date) = %s AND EXTRACT(MONTH FROM date) = %s) OR is_recurring = TRUE)"""
         values = (user_id, date.year, date.month)
         return self.__execute(command, values, True)
 
